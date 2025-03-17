@@ -14,13 +14,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy_json import MutableJson
 
 Base = declarative_base()
-# metadata_obj = MetaData()
 class Workflow(Base):
     __tablename__ = 'workflow'
-    # metadata_obj = metadata_obj
-    id = Column(Integer, primary_key=True)
-    dag_adjacency_list = Column(MutableJson)
-    # children: Mapped[List["Task"]] = relationship()
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    dag_adjacency_list = Column(MutableJson, nullable=False, default={})
+    prio_type = Column(String(50), nullable=False, default='regular') # or scheduled
+    children: Mapped[List["Task"]] = relationship()
 
     @property
     def execution_graph(self):
@@ -40,9 +39,10 @@ class Workflow(Base):
 
 class Task(Base):
     __tablename__ = 'task'
-    # metadata_obj = metadata_obj
     id = Column(Integer, primary_key=True, autoincrement=True)
-    # parent_id: Mapped[int] = mapped_column(ForeignKey("workflow.id"))
-    # parent :Mapped[Workflow] = relationship("Workflow", back_populates="children")
+    parent_id: Mapped[int] = mapped_column(ForeignKey("workflow.id"), nullable=True)
+    parent :Mapped[Workflow] = relationship("Workflow", back_populates="children")
     celery_task_uid = Column(String(100))
-    sleep = Column(Integer)
+    sleep = Column(Integer, nullable=False)
+    type = Column(String(50), nullable=False, default='pizza') # or pasta, burger, sushi
+    dependencies = Column(MutableJson, nullable=True)  # can be null if no dependencies

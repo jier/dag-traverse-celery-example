@@ -46,11 +46,16 @@ def _process_task_node(task, uid):
 
     # simulate that task runs
     for i in range(task.sleep):
-        print('{}: Sleep, sec: {}'.format(uid, i))
+        print('Type task:{} Id: {}: Sleep, sec: {}'.format(task.type, uid, i))
         time.sleep(1)
 
+def _has_dependencies(self, task: Task, session) -> bool:
+    dependencies = task.dependencies or []
+    return any(session.query(Task).filter(Task.id.in_(dependencies))).all()
+
+
 @app.task(bind=True)
-def run(self, workflow_id, cur_task_id=None):
+def run(self, workflow_id, queue, cur_task_id=None):
     print('Runnning Workflow {} and Task {}'.format(workflow_id, cur_task_id))
     workflow = session.query(Workflow).filter_by(id=workflow_id).one()
     graph = workflow.execution_graph
@@ -72,5 +77,11 @@ def run(self, workflow_id, cur_task_id=None):
     for task_id in next_task_ids:
         run.apply_async(
             args=(workflow_id, task_id,),
-            queue=QUEUE_NAME
+            queue=queue
         )
+# TODO implement run_no_graph
+@app.task(bind=True)
+def run_no_graph(self, workflow_id, cur_task_id=None):
+    # print('Runnning Workflow no graph {} and Task {}'.format(workflow_id, cur_task_id))
+    # workflow = session.query(Workflow).filter_by(id=workflow_id).one()
+    pass
