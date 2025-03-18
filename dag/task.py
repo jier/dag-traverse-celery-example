@@ -1,9 +1,9 @@
 import time
-from celery import Celery
+from celery import Celery, group
 from .models import Task, Workflow
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from .conf import DATABASE_URI, QUEUE_NAME
+from .conf import DATABASE_URI
 from celery.result import AsyncResult
 from celery.signals import task_postrun, task_prerun, after_setup_logger, task_failure
 from celery.states import SUCCESS
@@ -49,10 +49,29 @@ def _process_task_node(task, uid):
         print('Type task:{} Id: {}: Sleep, sec: {}'.format(task.type, uid, i))
         time.sleep(1)
 
+@app.task(bind=True)
+def _process_task(self, task_dict):
+    task_dict['celery_task_uid'] = self.request.id
+    task = Task.from_dict(task_dict)
+    session.add(task)
+    session.commit()
+
+    #simulate that task runs
+    for i in range(task.sleep):
+        print('Type task:{} Id: {}: Sleep, sec: {}'.format(task.type,  task.celery_task_uid, i))
+        time.sleep(1)
+    self.update_state(state=SUCCESS)
+
 def _has_dependencies(self, task: Task, session) -> bool:
     dependencies = task.dependencies or []
     return any(session.query(Task).filter(Task.id.in_(dependencies))).all()
 
+# TODO Update Workflow status once all tasks are completed with task id and status using celery callback
+# def _update_workflow_status(workflow_id, task_id, status):
+#     workflow = session.query(Workflow).filter_by(id=workflow_id).one()
+#     workflow.status = status
+#     session.add(workflow)
+#     session.commit()  
 
 @app.task(bind=True)
 def run(self, workflow_id, queue, cur_task_id=None):
@@ -74,14 +93,28 @@ def run(self, workflow_id, queue, cur_task_id=None):
 
     self.update_state(state=SUCCESS)
 
+    # Process the next tasks recursively
     for task_id in next_task_ids:
         run.apply_async(
             args=(workflow_id, task_id,),
             queue=queue
         )
-# TODO implement run_no_graph
+
+
 @app.task(bind=True)
-def run_no_graph(self, workflow_id, cur_task_id=None):
-    # print('Runnning Workflow no graph {} and Task {}'.format(workflow_id, cur_task_id))
-    # workflow = session.query(Workflow).filter_by(id=workflow_id).one()
-    pass
+def run_no_graph(self, workflow_id, queue):
+    print('Runnning Workflow no graph {} and Task {}'.format(workflow_id, self.request.id))
+    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
+    
+    workflow_tasks = workflow.children
+    # Convert task objects to dictionaries
+    tasks = [task.to_dict() for task in workflow_tasks]  
+
+    # Process each chunk of tasks
+    tasks_group = group(_process_task.si(task) for task in tasks)
+        
+    # Apply the tasks group asynchronously to the queue
+    tasks_group.apply_async(queue=queue)
+    
+    self.update_state(state=PROGRESS)
+

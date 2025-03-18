@@ -15,10 +15,12 @@
                 "-A",
                 "dag.task",
                 "worker",
+                "-E",
                 "--loglevel=info",
                 "--queues=queue-1,queue-2",
-                "--pool=solo", 
+                "--pool=threads", // or "--pool=processes" or "--pool=solo", 
                 "--concurrency=2",
+                
             ],
             "justMyCode": false
         }

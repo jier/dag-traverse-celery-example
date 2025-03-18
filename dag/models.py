@@ -1,12 +1,9 @@
 from celery.backends.database.models import Task as CeleryTask
 from typing import List
-# from .conf import DATABASE_URI
 import networkx as nx
 from networkx.algorithms.dag import is_directed_acyclic_graph
 from sqlalchemy import ForeignKey, MetaData
 from sqlalchemy import Column, Integer, String
-# from sqlalchemy import create_engine
-# from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -46,3 +43,24 @@ class Task(Base):
     sleep = Column(Integer, nullable=False)
     type = Column(String(50), nullable=False, default='pizza') # or pasta, burger, sushi
     dependencies = Column(MutableJson, nullable=True)  # can be null if no dependencies
+
+
+    def to_dict(self):
+        return {
+            'parent_id': self.parent_id,
+            'parent': self.parent.id if self.parent else None,
+            'celery_task_uid': self.celery_task_uid,
+            'sleep': self.sleep,
+            'type': self.type,
+            'dependencies': self.dependencies
+        }
+    
+    @classmethod
+    def from_dict(cls, task_dict):
+        return cls(
+            parent_id=task_dict['parent_id'],
+            celery_task_uid=task_dict['celery_task_uid'],
+            sleep=task_dict['sleep'],
+            type=task_dict['type'],
+            dependencies=task_dict['dependencies']
+        )

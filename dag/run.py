@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from .conf import DATABASE_URI, QUEUE_NAME, QUEUE_NAME_2
-from .task import run
+from .task import run, run_no_graph
 import random
 
 engine = create_engine(DATABASE_URI)
@@ -55,17 +55,21 @@ burger_order_dict = {idx: steps for idx, steps in enumerate(burger_order)}
 sushi_order_dict = {idx: steps for idx, steps in enumerate(sushi_order)}
 wf_priority = ['regular','scheduled']
 
-parent_regular = Workflow(prio_type='regular', dag_adjacency_list=make_dependency)
-session.add(parent_regular)
-for i in range(len(pizza_order)):
-    parent_regular.children.append(Task(sleep=random.randint(1, 4),type=random.choice(tastes), dependencies={}))
-session.commit()
+# TODO Design logic to group workflows and tasks and set priority 
+# TODO find logic to derive dependencies from data 
+# TODO express outside type of dependencies pasta depends on pizza depnds on burger
 
-workflow_regular = session.query(Workflow).filter_by(prio_type='regular').first()
-run.apply_async(
-    args=(workflow_regular.id,QUEUE_NAME,),
-    queue=QUEUE_NAME
-)
+# parent_regular = Workflow(prio_type='regular', dag_adjacency_list=make_dependency)
+# session.add(parent_regular)
+# for i in range(len(pizza_order)):
+#     parent_regular.children.append(Task(sleep=random.randint(1, 4),type=random.choice(tastes), dependencies={}))
+# session.commit()
+
+# workflow_regular = session.query(Workflow).filter_by(prio_type='regular').first()
+# run.apply_async(
+#     args=(workflow_regular.id,QUEUE_NAME,),
+#     queue=QUEUE_NAME
+# )
 
 parent_scheduled = Workflow(prio_type='scheduled', dag_adjacency_list=[])
 session.add(parent_scheduled)
@@ -74,7 +78,7 @@ for i in range(len(pasta_order)):
 session.commit()
 
 workflow_scheduled = session.query(Workflow).filter_by(prio_type='scheduled').first()
-run.apply_async(
+run_no_graph.apply_async(
     args=(workflow_scheduled.id,QUEUE_NAME_2,),
     queue=QUEUE_NAME_2
 )
