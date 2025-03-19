@@ -17,7 +17,7 @@ class Workflow(Base):
     dag_adjacency_list = Column(MutableJson, nullable=False, default={})
     prio_type = Column(String(50), nullable=False, default='regular') # or scheduled
     status = Column(String(50), nullable=False, default='pending') # or success, failure
-    tasks_status = Column(MutableJson, nullable=False)
+    tasks_status = Column(MutableJson, nullable=False, default={})
     children: Mapped[List["Task"]] = relationship()
 
     @property
@@ -34,6 +34,10 @@ class Workflow(Base):
         if is_directed_acyclic_graph(G):
             return G
         return None
+
+   
+    def count_children(self):
+        return len(self.children)
     
     
 
@@ -44,7 +48,7 @@ class Task(Base):
     parent_id: Mapped[int] = mapped_column(ForeignKey("workflow.id"), nullable=True)
     parent :Mapped[Workflow] = relationship("Workflow", back_populates="children")
     celery_task_uid = Column(String(100))
-    celery_task_status = Column(String(100))
+    celery_task_status = Column(String(100),default='PENDING')  # or SUCCESS, FAILURE
     celery_task_retry_count = Column(Integer, nullable=True)
     sleep = Column(Integer, nullable=False)
     type = Column(String(50), nullable=False, default='pizza') # or pasta, burger, sushi
@@ -54,8 +58,9 @@ class Task(Base):
     def to_dict(self):
         return {
             'parent_id': self.parent_id,
-            'parent': self.parent.id if self.parent else None,
             'celery_task_uid': self.celery_task_uid,
+            'celery_task_status': self.celery_task_status,
+            'celery_task_retry_count': self.celery_task_retry_count,
             'sleep': self.sleep,
             'type': self.type,
             'dependencies': self.dependencies
@@ -66,6 +71,8 @@ class Task(Base):
         return cls(
             parent_id=task_dict['parent_id'],
             celery_task_uid=task_dict['celery_task_uid'],
+            celery_task_status=task_dict['celery_task_status'],
+            celery_task_retry_count=task_dict['celery_task_retry_count'],
             sleep=task_dict['sleep'],
             type=task_dict['type'],
             dependencies=task_dict['dependencies']

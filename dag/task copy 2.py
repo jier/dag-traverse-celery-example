@@ -1,16 +1,14 @@
 import time
-from celery import Celery
+from celery import Celery, group, chord
 from .models import Task, Workflow
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from .conf import DATABASE_URI, QUEUE_NAME, QUEUE_NAME_2
+from .conf import DATABASE_URI
 from celery.result import AsyncResult
 from celery.signals import task_postrun, task_prerun, after_setup_logger, task_failure
-from celery.states import SUCCESS, PENDING, STARTED
-from celery import group
+from celery.states import SUCCESS, PENDING
 
 app = Celery('dag-celery', backend='db+' + DATABASE_URI, broker='amqp://guest:guest@localhost')
-
 
 engine = create_engine(DATABASE_URI)
 Session = sessionmaker(bind=engine)
@@ -30,10 +28,12 @@ def prerun(*args, **kwargs):
 
 @task_postrun.connect
 def postrun(*args, **kwargs):
+    # session = Session()
     session.flush()
     session.close()
 
 def _is_node_rdy(task, graph):
+    # session = Session()
     tasks = session.query(Task).filter(Task.id.in_(list(graph.predecessors(task.id)))).all()
     for dep_task in tasks:
         if not dep_task.celery_task_uid or \
@@ -41,62 +41,16 @@ def _is_node_rdy(task, graph):
             return False
     return True
 
-def _is_grap_done(task, graph):
-    tasks = session.query(Task).filter(Task.id.in_(list(graph.successors(task.id)))).all()
-    for dep_task in tasks:
-        if not dep_task.celery_task_uid or \
-           not AsyncResult(dep_task.celery_task_uid).state == SUCCESS:
-            return False
-    return True
 def _process_task_node(task, uid):
+    # session = Session()
     task.celery_task_uid = uid
+    session.add(task)
+    session.commit()
 
     # simulate that task runs
     for i in range(task.sleep):
-        print('Simulation run of type {}: and Id: {} with method Sleep, sec: {}'.format(task.type,uid, i))
+        print('Type task:{} Id: {}: Sleep, sec: {}'.format(task.type, uid, i))
         time.sleep(1)
-    task.celery_task_status = SUCCESS
-    session.add(task)
-    session.commit()
-    print('Task type {} completed with status {}'.format(task.type, task.celery_task_status))
-
-@app.task(bind=True, idempotent=True)
-def run(self, workflow_id, cur_task_id=None):
-    print('Runnning Workflow {} and Task {}'.format(workflow_id, cur_task_id))
-    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
-    graph = workflow.execution_graph
-
-    next_task_ids = []
-    if cur_task_id:
-        task = session.query(Task).get(cur_task_id)
-        if not _is_node_rdy(task, graph):
-            return
-
-
-
-        
-        _process_task_node(task, self.request.id)
-
-        next_task_ids = list(graph.successors(cur_task_id))
-    else:
-        next_task_ids = find_entry_point(graph)
-    
-    # self.update_state(state=SUCCESS, meta={'workflow_id': workflow_id})
-
-    for task_id in next_task_ids:
-        self.update_state(state=STARTED, meta={'workflow_id': workflow_id, 'task_id': cur_task_id})
-        run.apply_async(
-            args=(workflow_id, task_id,),
-            queue=QUEUE_NAME
-        )
-        
-        task = session.query(Task).get(cur_task_id)
-        if task:
-            if _is_grap_done(task, graph):  # if all tasks are done
-                print('Workflow {} completed'.format(workflow_id))
-                self.update_state(state=SUCCESS, meta={'workflow_id': workflow_id})
-                return True
-        
 
 @app.task(bind=True)
 def _process_task(self, task_dict):
@@ -113,7 +67,6 @@ def _process_task(self, task_dict):
     session.add(task)
     print('Task type {} completed with status {}'.format(task.type, task.celery_task_status))
     session.commit()
-    session.close()
     
     return task.to_dict()
 
@@ -146,8 +99,38 @@ def _update_workflow_status(self,task_list_dict):
     session.add(workflow)
     session.commit()
     print('Workflow id {} updated with children status'.format(workflow_id))
-    session.close()
     
+
+
+@app.task(bind=True)
+def run(self, workflow_id, queue, cur_task_id=None):
+    # session = Session()
+    print('Runnning Workflow {} and Task {}'.format(workflow_id, cur_task_id))
+    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
+    graph = workflow.execution_graph
+
+    next_task_ids = []
+    if cur_task_id:
+        task = session.query(Task).get(cur_task_id)
+        if not _is_node_rdy(task, graph):
+            return
+
+        _process_task_node(task, self.request.id)
+
+        next_task_ids = list(graph.successors(cur_task_id))
+    else:
+        next_task_ids = find_entry_point(graph)
+
+    self.update_state(state=SUCCESS)
+
+    # Process the next tasks recursively
+    for task_id in next_task_ids:
+        run.apply_async(
+            args=(workflow_id, task_id,),
+            queue=queue
+        )
+
+
 @app.task(bind=True)
 def run_no_graph(self, workflow_id, queue):
     session = Session()
@@ -165,7 +148,6 @@ def run_no_graph(self, workflow_id, queue):
     tasks_group.apply_async(queue=queue)
     
     self.update_state(state=PENDING)
-    session.close()
 
 @app.task(bind=True)
 def run_group(self, workflow_id, queue):
@@ -188,4 +170,6 @@ def run_group(self, workflow_id, queue):
 
     # Apply the tasks chord asynchronously to the queue
     tasks_chord.apply_async(queue=queue)
-    session.close()
+
+    
+  
