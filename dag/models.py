@@ -16,6 +16,8 @@ class Workflow(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     dag_adjacency_list = Column(MutableJson, nullable=False, default={})
     prio_type = Column(String(50), nullable=False, default='regular') # or scheduled
+    status = Column(String(50), nullable=False, default='pending') # or success, failure
+    tasks_status = Column(MutableJson, nullable=False)
     children: Mapped[List["Task"]] = relationship()
 
     @property
@@ -32,6 +34,8 @@ class Workflow(Base):
         if is_directed_acyclic_graph(G):
             return G
         return None
+    
+    
 
 
 class Task(Base):
@@ -40,6 +44,8 @@ class Task(Base):
     parent_id: Mapped[int] = mapped_column(ForeignKey("workflow.id"), nullable=True)
     parent :Mapped[Workflow] = relationship("Workflow", back_populates="children")
     celery_task_uid = Column(String(100))
+    celery_task_status = Column(String(100))
+    celery_task_retry_count = Column(Integer, nullable=True)
     sleep = Column(Integer, nullable=False)
     type = Column(String(50), nullable=False, default='pizza') # or pasta, burger, sushi
     dependencies = Column(MutableJson, nullable=True)  # can be null if no dependencies

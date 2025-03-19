@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from .conf import DATABASE_URI, QUEUE_NAME, QUEUE_NAME_2
-from .task import run, run_no_graph
+from .task import run_group # run, run_no_graph
 import random
 
 engine = create_engine(DATABASE_URI)
@@ -78,7 +78,7 @@ for i in range(len(pasta_order)):
 session.commit()
 
 workflow_scheduled = session.query(Workflow).filter_by(prio_type='scheduled').first()
-run_no_graph.apply_async(
+run_group.apply_async(
     args=(workflow_scheduled.id,QUEUE_NAME_2,),
     queue=QUEUE_NAME_2
 )

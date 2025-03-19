@@ -1,5 +1,5 @@
 import time
-from celery import Celery, group
+from celery import Celery, group, chord
 from .models import Task, Workflow
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -61,20 +61,42 @@ def _process_task(self, task_dict):
         print('Type task:{} Id: {}: Sleep, sec: {}'.format(task.type,  task.celery_task_uid, i))
         time.sleep(1)
     self.update_state(state=SUCCESS)
+    task.celery_task_status = self.state
+    session.add(task)
+    session.commit()
+    return task.to_dict()
+
+# TODO add data before sending to simulate task in a new deployment task table
 
 def _has_dependencies(self, task: Task, session) -> bool:
     dependencies = task.dependencies or []
     return any(session.query(Task).filter(Task.id.in_(dependencies))).all()
 
 # TODO Update Workflow status once all tasks are completed with task id and status using celery callback
-# def _update_workflow_status(workflow_id, task_id, status):
-#     workflow = session.query(Workflow).filter_by(id=workflow_id).one()
-#     workflow.status = status
-#     session.add(workflow)
-#     session.commit()  
+@app.task(bind=True)
+def _update_workflow_status(self,workflow_id, task_list_dict):
+    print('Updating Workflow id {}  with children status'.format(workflow_id))
+    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
+    task_list = [Task.from_dict(task_dict) for task_dict in task_list_dict]
+    # TODO Update method here to update the task status
+    result = []
+    for task in task_list:
+        result.append({'type': task.type, 'celery_task_uuid': task.celery_task_uid,
+                                'celery_task_status':task.celery_task_status
+                            })
+    workflow.tasks_status = result
+                
+    self.update_state(state=SUCCESS)
+    workflow.status = self.state
+    session.add(workflow)
+    session.commit()
+    print('Workflow id {} updated with children status'.format(workflow_id))
+    
+
 
 @app.task(bind=True)
 def run(self, workflow_id, queue, cur_task_id=None):
+
     print('Runnning Workflow {} and Task {}'.format(workflow_id, cur_task_id))
     workflow = session.query(Workflow).filter_by(id=workflow_id).one()
     graph = workflow.execution_graph
@@ -118,3 +140,25 @@ def run_no_graph(self, workflow_id, queue):
     
     self.update_state(state=PROGRESS)
 
+@app.task(bind=True)
+def run_group(self, workflow_id, queue):
+    print('Runnning Workflow no graph {} and Task {}'.format(workflow_id, self.request.id))
+    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
+    
+    workflow_tasks = workflow.children
+    # Convert task objects to dictionaries
+    tasks = [task.to_dict() for task in workflow_tasks]  
+
+    # Process each chunk of tasks and update the workflow status as callback
+    tasks_chord = chord([_process_task.si(task) for task in tasks], _update_workflow_status.s(workflow_id, ))
+    
+    # Update the workflow status and task status
+    self.update_state(state=PROGRESS)
+    workflow.status = 'running'
+    session.add(workflow)
+    session.commit()
+
+    # Apply the tasks chord asynchronously to the queue
+    tasks_chord.apply_async(queue=queue)
+    
+  
