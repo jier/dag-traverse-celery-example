@@ -77,69 +77,166 @@
 #     # }
 
 import random
-import networkx as nx
 
-order_dependency = {
+
+# order_dependency = {
+#     1: [3],
+#     2: [3],
+#     3: [4],
+#     4: [5]
+
+# }
+# tastes = ['pizza', 'pasta', 'burger', 'sushi']
+# pizza_order =['base', 'sauce', 'cheese', 'toppings']
+# pasta_order = ['pasta', 'sauce', 'cheese', 'toppings']
+# burger_order = ['bun', 'patty', 'cheese', 'toppings']
+# sushi_order = ['rice', 'fish', 'seaweed', 'toppings']
+# pizzas = ['margherita', 'pepperoni', 'hawaiian', 'meat feast']
+# pastas = ['carbonara', 'bolognese', 'pesto', 'alfredo']
+# burgers = ['cheeseburger', 'chicken burger', 'veggie burger', 'bacon burger']
+# sushis = ['nigiri', 'sashimi', 'maki', 'temaki']
+# wf_priority = ['regular','scheduled']
+# wf_entries = []
+# task_entries = []
+
+# for i in range(1, 5):
+#     task_entries.append([random.randint(1, 7),random.choice(tastes), order_dependency.get(i, [])])
+
+# print(f"Task entries: {task_entries}")
+
+# for i in wf_priority:
+#     wf_entries.append([i, order_dependency])
+# print(f"Workflow entries:{wf_entries}")
+# pizza_order_dict = {idx: steps for idx, steps in enumerate(pizza_order)}
+
+
+# pasta_order_dict = {idx: steps for idx, steps in enumerate(pasta_order)}
+# burger_order_dict = {idx: steps for idx, steps in enumerate(burger_order)}
+# sushi_order_dict = {idx: steps for idx, steps in enumerate(sushi_order)}
+# print(f"Pizza order: {pizza_order_dict}")
+# print(f"Pasta order: {pasta_order_dict}")
+# print(f"Burger order: {burger_order_dict}")
+# print(f"Sushi order: {sushi_order_dict}")
+
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# dag_adjacency_list_2 = {
+#     0: [(2,)],
+#     1: [(2,)],
+#     2: [(3,)],
+#     3: [(4)]
+# }
+
+# G = nx.DiGraph()
+
+# for node, neighbors in dag_adjacency_list_2.items():
+#     G.add_node(node)
+#     for neighbor in neighbors:
+#         G.add_edge(node, neighbor)
+# nx.draw(G, with_labels=True)
+# # pos = nx.spring_layout(G)
+# # nx.draw_networkx_nodes(G, pos, node_size=500, node_color='lightgrey')
+# # nx.draw_networkx_edges(G, pos)
+# # nx.draw_networkx_labels(G, pos)
+
+# plt.axis('off')
+# plt.show()
+
+# Define the adjacency lists
+make_dependency_1 = {
+    1: [3],
+    2: [4],
+    3: [5],
+    4: [5],
+    5: [6, 7],
+    6: [8],
+    7: [8]
+}
+# make_dependency_1 = {
+#     1: [3],
+#     2: [3],
+#     3: [4],
+#     4: []
+# }
+make_dependency_2 = {
     1: [3],
     2: [3],
     3: [4],
     4: [5]
-
-}
-tastes = ['pizza', 'pasta', 'burger', 'sushi']
-pizza_order =['base', 'sauce', 'cheese', 'toppings']
-pasta_order = ['pasta', 'sauce', 'cheese', 'toppings']
-burger_order = ['bun', 'patty', 'cheese', 'toppings']
-sushi_order = ['rice', 'fish', 'seaweed', 'toppings']
-pizzas = ['margherita', 'pepperoni', 'hawaiian', 'meat feast']
-pastas = ['carbonara', 'bolognese', 'pesto', 'alfredo']
-burgers = ['cheeseburger', 'chicken burger', 'veggie burger', 'bacon burger']
-sushis = ['nigiri', 'sashimi', 'maki', 'temaki']
-wf_priority = ['regular','scheduled']
-wf_entries = []
-task_entries = []
-
-for i in range(1, 5):
-    task_entries.append([random.randint(1, 7),random.choice(tastes), order_dependency.get(i, [])])
-
-print(f"Task entries: {task_entries}")
-
-for i in wf_priority:
-    wf_entries.append([i, order_dependency])
-print(f"Workflow entries:{wf_entries}")
-pizza_order_dict = {idx: steps for idx, steps in enumerate(pizza_order)}
-
-
-pasta_order_dict = {idx: steps for idx, steps in enumerate(pasta_order)}
-burger_order_dict = {idx: steps for idx, steps in enumerate(burger_order)}
-sushi_order_dict = {idx: steps for idx, steps in enumerate(sushi_order)}
-print(f"Pizza order: {pizza_order_dict}")
-print(f"Pasta order: {pasta_order_dict}")
-print(f"Burger order: {burger_order_dict}")
-print(f"Sushi order: {sushi_order_dict}")
-
-
-from networkx import DiGraph
-import matplotlib.pyplot as plt
-
-dag_adjacency_list_2 = {
-    0: [(1,)],
-    1: [(2,)],
-    2: [(3,)],
-    3: [()]
 }
 
-G = nx.DiGraph()
+# Create a directed graph for each adjacency list
+G1 = nx.DiGraph()
+G2 = nx.DiGraph()
+G3 = nx.DiGraph()
+# Add edges to the graphs
+for node, successors in make_dependency_1.items():
+    for successor in successors:
+        G1.add_edge(node, successor)
 
-for node, neighbors in dag_adjacency_list_2.items():
-    G.add_node(node)
-    for neighbor in neighbors:
-        G.add_edge(node, neighbor)
+for node, successors in make_dependency_2.items():
+    for successor in successors:
+        G2.add_edge(node, successor)
 
-pos = nx.spring_layout(G)
-nx.draw_networkx_nodes(G, pos, node_size=500, node_color='lightgrey')
-nx.draw_networkx_edges(G, pos)
-nx.draw_networkx_labels(G, pos)
+d = make_dependency_1
+for node in d.keys():
+    # print('node:', node)
+    nodes = d[node]
+    # print('nodes:', nodes)
+    if len(nodes) == 0:
+        G3.add_node(int(node))
+        continue
+    G3.add_edges_from([(int(node), n) for n in nodes])
+if nx.is_directed_acyclic_graph(G3):
+    print('G3 is a DAG')
+else: 
+    print('G3 is not a DAG')      
+# # Plot the graphs singularly
+# pos = nx.spring_layout(G1)
+# nx.draw(G1, pos, with_labels=True, node_color='lightblue', node_size=1500, edge_color='gray', linewidths=1, font_size=12)
+# plt.show()
 
-plt.axis('off')
-plt.show()
+# pos = nx.spring_layout(G2)
+# nx.draw(G2, pos, with_labels=True, node_color='lightblue', node_size=1500, edge_color='gray', linewidths=1, font_size=12)
+# plt.show()
+
+# Plot the graphs side by side
+# pos1 = nx.spring_layout(G1)
+# pos2 = nx.spring_layout(G2)
+
+# # Create a new figure with subplots
+# fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+
+# # Plot G1 on the left subplot
+# ax1.axis('off')
+# nx.draw(G1, pos1, ax=ax1, with_labels=True, node_color='lightblue', node_size=1500, edge_color='gray', linewidths=1, font_size=12 )
+# nx.draw_networkx_nodes(G1, pos1, ax=ax1, node_color='lightblue', node_size=1500)
+# nx.draw_networkx_labels(G1, pos1, ax=ax1, font_size=12)
+# nx.draw_networkx_edges(G1, pos1, ax=ax1, edge_color='gray', width=1, arrowsize=20, arrows=True)
+
+# # Plot G2 on the right subplot
+# ax2.axis('off')
+# nx.draw(G2, pos2, ax=ax2, with_labels=True, node_color='lightblue', node_size=1500, edge_color='gray', linewidths=1, font_size=12)
+# nx.draw_networkx_nodes(G2, pos2, ax=ax2, node_color='lightgreen', node_size=1500)
+# nx.draw_networkx_labels(G2, pos2, ax=ax2, font_size=12)
+# nx.draw_networkx_edges(G2, pos2, ax=ax2, edge_color='gray', width=1, arrowsize=20, arrows=True)
+
+# # Layout so plots do not overlap
+# fig.tight_layout()
+
+# plt.show()
+# Check if the graphs are DAGs
+# print("Is G1 a DAG?", nx.is_directed_acyclic_graph(G1))
+# print("Is G2 a DAG?", nx.is_directed_acyclic_graph(G2))
+
+# print(nx.topological_sort(G1))
+
+#     if len(list(G1.predecessors(node))) == 0:
+#         result.append(node)
+#     else:
+#         result.append(list(G1.successors(node)))
+
+# print(f"Result entrypoint: {result}")
+data = [{'parent_id': 2, 'celery_task_uid': '6e278c68-46fb-4465-b1d8-846b48ee593e', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'pesto', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': '0ff8b31e-8f5c-41c3-a125-d3d4d0485b65', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'carbonara', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': '25e589b3-ce71-4c41-bcfd-1207af900ebd', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 3, 'type': 'pesto', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': 'c5d62fc2-1d95-4076-92bb-dbb407cedb19', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'pesto', 'dependencies': {}}]
+print(data[0]['parent_id'])

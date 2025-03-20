@@ -18,7 +18,7 @@ class Workflow(Base):
     prio_type = Column(String(50), nullable=False, default='regular') # or scheduled
     status = Column(String(50), nullable=False, default='pending') # or success, failure
     tasks_status = Column(MutableJson, nullable=False, default={})
-    children: Mapped[List["Task"]] = relationship()
+    children: Mapped[List["Task"]] = relationship("Task", back_populates="parent")
 
     @property
     def execution_graph(self):
@@ -35,13 +35,40 @@ class Workflow(Base):
             return G
         return None
 
-   
+    def to_dict(self):
+            return {
+                'id': self.id,
+                'dag_adjacency_list': self.dag_adjacency_list,
+                'prio_type': self.prio_type,
+                'status': self.status,
+                'tasks_status': self.tasks_status,
+                'children': [child.to_dict() for child in self.children]
+            }
+
     def count_children(self):
         return len(self.children)
     
+    def get_child(self, child_id):
+        return self.children[child_id]
+
     
-
-
+    @classmethod
+    def from_dict(cls, workflow_dict):
+        children = []
+        for child_dict in workflow_dict['children']:
+            # Create an instance of the Task class for each dictionary
+            child = Task.from_dict(child_dict)
+            children.append(child)
+        return cls(
+            id=workflow_dict['id'],
+            dag_adjacency_list= workflow_dict['dag_adjacency_list'],
+            prio_type=workflow_dict['prio_type'],
+            status=workflow_dict['status'],
+            tasks_status=workflow_dict['tasks_status'],
+            children=children
+        )
+    
+    
 class Task(Base):
     __tablename__ = 'task'
     id = Column(Integer, primary_key=True, autoincrement=True)

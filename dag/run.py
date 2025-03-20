@@ -3,9 +3,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from .conf import DATABASE_URI, QUEUE_NAME, QUEUE_NAME_2
-from .task import  run ,run_group #,run_no_graph
+from .task import  run_group, run
 import random
-
+from celery.result import ResultBase
 engine = create_engine(DATABASE_URI)
 
 Session = sessionmaker(bind=engine)
@@ -20,7 +20,6 @@ CeleryTask.__table__.create(engine, checkfirst=True)
 Base.metadata.create_all(engine)
 
 
-# TODO fix indexing of tasks
 order_dependency = dict([
     (1, [3]),
     (2, [4]),
@@ -31,11 +30,17 @@ order_dependency = dict([
     (7, [8])
 ])
 
-make_dependency =dict([
+make_dependency_1 =dict([
     (1, [3]),
     (2, [3]),
     (3, [4]),
     (4, [])
+])
+make_dependency_2 =dict([
+    (1, []),
+    (2, []),
+    (3, [1,2]),
+    (4, [3])
 ])
 prio_dependency = dict([])
 
@@ -46,7 +51,7 @@ pizza_order =['dough', 'sauce', 'cheese', 'toppings']
 pasta_order = ['pasta', 'sauce', 'cheese', 'toppings']
 burger_order = ['bun', 'patty', 'cheese', 'toppings']
 sushi_order = ['rice', 'fish', 'seaweed', 'toppings']
-
+{'pizza':pizza_order}
 # type of tasks
 pizzas = ['margherita', 'pepperoni', 'hawaiian', 'meat feast']
 pastas = ['carbonara', 'bolognese', 'pesto', 'alfredo']
@@ -60,54 +65,75 @@ burger_order_dict = {idx: steps for idx, steps in enumerate(burger_order)}
 sushi_order_dict = {idx: steps for idx, steps in enumerate(sushi_order)}
 
 # task priority
-full_course = ['appetizer', 'main_course', 'dessert', 'drink']
-task_course_priority = dict([
-    ('appetizer', ['soup', 'salad', 'bread', 'cheese']),
-    ('main_course', ['pasta', 'pizza', 'burger', 'sushi']),
-    ('dessert', ['cake', 'ice_cream', 'pudding', 'fruit']),
-    ('drink', ['water', 'juice', 'soda', 'wine'])
-])
+full_course = ['drink','appetizer', 'main_course', 'dessert','cheese platter']
 
-task_priority_course = dict([
-    (1, [2,4]),
-    (2, [3]),
-    (3, [2]),
-    (4, [])
-])
 appetizer = ['soup', 'salad', 'bread', 'cheese']
 main_course = ['pasta', 'pizza', 'burger', 'sushi']
 dessert = ['cake', 'ice_cream', 'pudding', 'fruit']
 drink = ['water', 'juice', 'soda', 'wine']
 
 
+task_course_priority_tasks = dict([
+    ('appetizer', ['soup', 'salad', 'bread', 'cheese']),
+    ('main_course', ['pasta', 'pizza', 'burger', 'sushi']),
+    ('dessert', ['cake', 'ice_cream', 'pudding', 'fruit']),
+    ('drink', ['water', 'juice', 'soda', 'wine'])
+])
+task_course_priority = dict([
+    ('appetizer', ['dessert']),
+    ('main_course', ['dessert']),
+    ('dessert', ['drink']),
+    ('drink', [])
+])
+task_priority_course = dict([
+    (1, [2,4]),
+    (2, [3]),
+    (3, [2]),
+    (4, [])
+])
+
+
+
 wf_priority = ['regular','scheduled']
 
-#  TODO Fix concurrency issue on worker pickin up already picked tasks 
 # TODO Design logic to group workflows and tasks and set priority using celery configuration
-# TODO find logic to derive dependencies from data 
 # TODO express outside type of dependencies pasta depends on pizza depnds on burger
 # TODO add deployment representation of task and workflow and keep revision 
 
-parent_regular = Workflow(prio_type='regular', dag_adjacency_list=make_dependency)
+parent_regular = Workflow(prio_type='regular', dag_adjacency_list=make_dependency_1)
 session.add(parent_regular)
-for i in range(len(full_course)):
+for i in range(len(full_course)+1):
     parent_regular.children.append(Task(sleep=random.randint(1, 4),type=random.choice(full_course), dependencies={}))
 session.commit()
 
+
+
+parent_scheduled = Workflow(prio_type='scheduled', dag_adjacency_list=[])
+session.add(parent_scheduled)
+for i in range(len(pasta_order)):
+    parent_scheduled.children.append(Task(sleep=random.randint(1, 4),type=random.choice(pastas), dependencies={}))
+session.commit()
 workflow_regular = session.query(Workflow).filter_by(prio_type='regular').first()
-run.apply_async(
-    args=(workflow_regular.id,),
+workflow_scheduled = session.query(Workflow).filter_by(prio_type='scheduled').first()
+# for worklflow in [workflow_regular, workflow_scheduled]:
+#     if worklflow.prio_type != 'scheduled':
+#         print(worklflow.prio_type)
+#     else:
+#         print('different')
+# result_group =run_group.apply_async(
+#     args=(workflow_scheduled.to_dict(),QUEUE_NAME_2,),
+#     queue=QUEUE_NAME_2
+# )
+result_regular = run.apply_async(
+    args=(workflow_regular.to_dict(),),
     queue=QUEUE_NAME
 )
 
-# parent_scheduled = Workflow(prio_type='scheduled', dag_adjacency_list=[])
-# session.add(parent_scheduled)
-# for i in range(len(pasta_order)):
-#     parent_scheduled.children.append(Task(sleep=random.randint(1, 4),type=random.choice(pastas), dependencies={}))
-# session.commit()
 
-# workflow_scheduled = session.query(Workflow).filter_by(prio_type='scheduled').first()
-# run_group.apply_async(
-#     args=(workflow_scheduled.id,QUEUE_NAME_2,),
-#     queue=QUEUE_NAME_2
-# )
+
+# # Collect results
+print(list(result_regular.collect()))
+# _, answer =list(result_group.collect())[0]
+# print(answer)
+
+# print([result for result in result_group.collect() if not isinstance(result, (ResultBase, tuple))])

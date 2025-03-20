@@ -61,7 +61,6 @@ class Task(Base):
     feedback_bucket = Column(String(50), nullable=True)  # can be null if not specified
     target_system_id = Column(Integer, nullable=True)  # can be null if not specified
 
-# Workflow.deployments = relationship("Deployment", back_populates="workflow")
 class Deployment(Base):
     __tablename__ = 'deployment'
     id = Column(Integer, primary_key=True)

@@ -1,106 +1,62 @@
 import time
 from celery import Celery
 from .models import Task, Workflow
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from .conf import DATABASE_URI, QUEUE_NAME, QUEUE_NAME_2
-from celery.result import AsyncResult
-from celery.signals import task_postrun, task_prerun, after_setup_logger, task_failure
-from celery.states import SUCCESS, PENDING, STARTED
+from .conf import DATABASE_URI
+# from celery.signals import task_postrun, task_prerun, after_setup_logger, task_failure
+from celery.states import SUCCESS
 from celery import group
+import networkx as nx
+from celery.result import AsyncResult
 
 app = Celery('dag-celery', backend='db+' + DATABASE_URI, broker='amqp://guest:guest@localhost')
 
 
-engine = create_engine(DATABASE_URI)
-Session = sessionmaker(bind=engine)
-
-def find_entry_point(G):
-    result = []
-    for node in G.nodes:
-        if len(list(G.predecessors(node))) == 0:
-            result.append(node)
-    return result
-
-@task_prerun.connect
-def prerun(*args, **kwargs):
-    global session
-    session = Session()
-
-
-@task_postrun.connect
-def postrun(*args, **kwargs):
-    session.flush()
-    session.close()
-
-def _is_node_rdy(task, graph):
-    tasks = session.query(Task).filter(Task.id.in_(list(graph.predecessors(task.id)))).all()
-    for dep_task in tasks:
-        if not dep_task.celery_task_uid or \
-           not AsyncResult(dep_task.celery_task_uid).state == SUCCESS:
-            return False
-    return True
-
-def _is_grap_done(task, graph):
-    tasks = session.query(Task).filter(Task.id.in_(list(graph.successors(task.id)))).all()
-    for dep_task in tasks:
-        if not dep_task.celery_task_uid or \
-           not AsyncResult(dep_task.celery_task_uid).state == SUCCESS:
-            return False
-    return True
-def _process_task_node(task, uid):
+def _process_task_node(task_dict, uid):
+    task = Task.from_dict(task_dict)
     task.celery_task_uid = uid
 
     # simulate that task runs
     for i in range(task.sleep):
-        print('Simulation run of type {}: and Id: {} with method Sleep, sec: {}'.format(task.type,uid, i))
+        print('Simulation run with type: {}  Id: {} with method Sleep, sec: {}'.format(task.type, uid, i))
         time.sleep(1)
     task.celery_task_status = SUCCESS
-    session.add(task)
-    session.commit()
     print('Task type {} completed with status {}'.format(task.type, task.celery_task_status))
 
+    return task.to_dict()
+
+
+def flatten_workflow_dag(workflow: Workflow):
+    return nx.topological_sort(workflow.execution_graph)
+
+
 @app.task(bind=True, idempotent=True)
-def run(self, workflow_id, cur_task_id=None):
-    print('Runnning Workflow {} and Task {}'.format(workflow_id, cur_task_id))
-    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
-    graph = workflow.execution_graph
+def run(self, workflow_dict):
 
-    next_task_ids = []
-    if cur_task_id:
-        task = session.query(Task).get(cur_task_id)
-        if not _is_node_rdy(task, graph):
-            return
+    workflow = Workflow.from_dict(workflow_dict)
+    print('Running Workflow {} '.format(workflow.id))
 
+    flattened_workflow = flatten_workflow_dag(workflow)
+    task_list = []
 
+    for task_id in flattened_workflow:
+        task_dict = _process_task_node(workflow.get_child(task_id).to_dict(), self.request.id)
+        task_list.append(Task.from_dict(task_dict))
 
-        
-        _process_task_node(task, self.request.id)
+    result = []
+    for task in task_list:
+        result.append({'type': task.type, 'celery_task_uuid': task.celery_task_uid,
+                                'celery_task_status':task.celery_task_status
+                            })
+    workflow.tasks_status = result
+    self.update_state(state=SUCCESS, meta={'workflow_id': workflow.id})
+    workflow.status = SUCCESS
 
-        next_task_ids = list(graph.successors(cur_task_id))
-    else:
-        next_task_ids = find_entry_point(graph)
-    
-    # self.update_state(state=SUCCESS, meta={'workflow_id': workflow_id})
+    return workflow.to_dict()
 
-    for task_id in next_task_ids:
-        self.update_state(state=STARTED, meta={'workflow_id': workflow_id, 'task_id': cur_task_id})
-        run.apply_async(
-            args=(workflow_id, task_id,),
-            queue=QUEUE_NAME
-        )
-        
-        task = session.query(Task).get(cur_task_id)
-        if task:
-            if _is_grap_done(task, graph):  # if all tasks are done
-                print('Workflow {} completed'.format(workflow_id))
-                self.update_state(state=SUCCESS, meta={'workflow_id': workflow_id})
-                return True
-        
 
 @app.task(bind=True)
 def _process_task(self, task_dict):
-    session = Session()
+
     task_dict['celery_task_uid'] = self.request.id
     task = Task.from_dict(task_dict)
 
@@ -108,30 +64,25 @@ def _process_task(self, task_dict):
     for i in range(task.sleep):
         print('Type task:{} Id: {}: Sleep, sec: {}'.format(task.type,  task.celery_task_uid, i))
         time.sleep(1)
+
     self.update_state(state=SUCCESS)
     task.celery_task_status = SUCCESS
-    session.add(task)
+
     print('Task type {} completed with status {}'.format(task.type, task.celery_task_status))
-    session.commit()
-    session.close()
-    
+
     return task.to_dict()
 
 # TODO add data before sending to simulate task in a new deployment task table
-
-def _has_dependencies(self, task: Task, session) -> bool:
-    # session = Session()
-    dependencies = task.dependencies or []
-    return any(session.query(Task).filter(Task.id.in_(dependencies))).all()
+def _update_deployment_task(self, task_dict):
+    pass 
 
 
-@app.task(bind=True)
-def _update_workflow_status(self,task_list_dict):
-    session = Session()
+
+def _update_workflow_status(task_list_dict, workflow_dict):
+
     print('Updating Workflow id {}  with children status'.format(task_list_dict[0]['parent_id']))
     
-    workflow_id = task_list_dict[0]['parent_id']
-    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
+    workflow = Workflow.from_dict(workflow_dict)
     task_list = [Task.from_dict(task_dict) for task_dict in task_list_dict]
   
     result = []
@@ -140,52 +91,34 @@ def _update_workflow_status(self,task_list_dict):
                                 'celery_task_status':task.celery_task_status
                             })
     workflow.tasks_status = result
-                
-    self.update_state(state=SUCCESS)
+
     workflow.status = SUCCESS
-    session.add(workflow)
-    session.commit()
-    print('Workflow id {} updated with children status'.format(workflow_id))
-    session.close()
+    print('Workflow id {} updated with children status'.format(workflow.id))
+
+    return workflow.to_dict()
     
+
 @app.task(bind=True)
-def run_no_graph(self, workflow_id, queue):
-    session = Session()
-    print('Runnning Workflow no graph {} and Task {}'.format(workflow_id, self.request.id))
-    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
-    
+def run_group(self, workflow_dict, queue):
+
+    workflow = Workflow.from_dict(workflow_dict)
+    print('Runnning Workflow no graph {} and Task {}'.format(workflow.id, self.request.id))
+
     workflow_tasks = workflow.children
+
     # Convert task objects to dictionaries
     tasks = [task.to_dict() for task in workflow_tasks]  
 
-    # Process each chunk of tasks
-    tasks_group = group(_process_task.si(task) for task in tasks)
-        
-    # Apply the tasks group asynchronously to the queue
-    tasks_group.apply_async(queue=queue)
-    
-    self.update_state(state=PENDING)
-    session.close()
+    # Process each chunk of tasks and update the workflow status 
+    tasks_group = group([_process_task.s(task) for task in tasks]) 
 
-@app.task(bind=True)
-def run_group(self, workflow_id, queue):
-    session = Session()
-    print('Runnning Workflow no graph {} and Task {}'.format(workflow_id, self.request.id))
-    workflow = session.query(Workflow).filter_by(id=workflow_id).one()
-    
-    workflow_tasks = workflow.children
-    # Convert task objects to dictionaries
-    tasks = [task.to_dict() for task in workflow_tasks]  
+    result_group =tasks_group.apply_async(queue=queue)
+    intermediate_tasks_result = []
+    # Wait for the result of the group once all tasks are done
+    while True:
+        if result_group.successful() or result_group.failed():
+            intermediate_tasks_result.append([AsyncResult(result_group.children[idx]).result  for idx, _ in enumerate(result_group)])
+            break
+        time.sleep(1)
 
-    # Process each chunk of tasks and update the workflow status as callback
-    tasks_chord = group([_process_task.s(task) for task in tasks]) | _update_workflow_status.s()
-    
-    # Update the workflow status and task status
-    self.update_state(state=PENDING)
-    workflow.status = PENDING
-    session.add(workflow)
-    session.commit()
-
-    # Apply the tasks chord asynchronously to the queue
-    tasks_chord.apply_async(queue=queue)
-    session.close()
+    return _update_workflow_status(task_list_dict=intermediate_tasks_result[0],workflow_dict=workflow_dict)
