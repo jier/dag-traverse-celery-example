@@ -12,6 +12,7 @@ app = Celery('dag-celery', backend='db+' + DATABASE_URI, broker='amqp://guest:gu
 
 
 def _process_task_node(task_dict, uid):
+    # TODO add randomness to sometimes put task to failed states
     task = Task.from_dict(task_dict)
     task.celery_task_uid = uid
 
@@ -56,6 +57,7 @@ def run(self, workflow_dict):
 
 @app.task(bind=True)
 def _process_task(self, task_dict):
+    # TODO add randomness to sometimes put task to failed states
 
     task_dict['celery_task_uid'] = self.request.id
     task = Task.from_dict(task_dict)
@@ -79,7 +81,8 @@ def _update_deployment_task(self, task_dict):
 
 
 def _update_workflow_status(task_list_dict, workflow_dict):
-
+    # TODO add randomness to sometimes put workflow to failed states depending on task_children status, 
+    # all success wf success, at least one failed wf status failed
     print('Updating Workflow id {}  with children status'.format(task_list_dict[0]['parent_id']))
     
     workflow = Workflow.from_dict(workflow_dict)

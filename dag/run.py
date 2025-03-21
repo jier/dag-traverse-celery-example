@@ -33,44 +33,67 @@ order_dependency = dict([
 make_dependency_1 =dict([
     (1, [3]),
     (2, [3]),
-    (3, [4]),
-    (4, [])
+    (3, [4, 5]),
+    (4, []),
+    (5, [])
 ])
 make_dependency_2 =dict([
-    (1, []),
-    (2, []),
-    (3, [1,2]),
-    (4, [3])
+    (1, [2]),
+    (2, [3, 4]),
+    (3, [5]),
+    (4, [5]),
+    (5, [])
 ])
-prio_dependency = dict([])
+make_dependency_3 =dict([
+    (1, [2]),
+    (2, [3]),
+    (3, [5]),
+    (4, [5]),
+    (5, [])
+])
+
+variations_depency_list = [make_dependency_1,make_dependency_2,make_dependency_3, order_dependency]
+
 
 tastes = ['pizza', 'pasta', 'burger', 'sushi']
 
 # type of tasks order in a task
-pizza_order =['dough', 'sauce', 'cheese', 'toppings']
-pasta_order = ['pasta', 'sauce', 'cheese', 'toppings']
-burger_order = ['bun', 'patty', 'cheese', 'toppings']
-sushi_order = ['rice', 'fish', 'seaweed', 'toppings']
-{'pizza':pizza_order}
+# sauces/patty/fish only when dough/pasta/bun/rice happens together with cheese/seaweed then toppings then serving
+
+pizza_order =['dough', 'cheese','sauce', 'toppings','serving']
+pasta_order = ['pasta', 'cheese', 'sauce', 'toppings','serving']
+burger_order = ['bun', 'cheese','patty', 'toppings','serving']
+sushi_order = ['rice', 'seaweed','fish', 'toppings','serving']
+
+representations =[{'pizza':pizza_order},
+                  {'pasta': pasta_order},
+                  {'burger': burger_order},
+                  {'sushi':sushi_order}]
 # type of tasks
 pizzas = ['margherita', 'pepperoni', 'hawaiian', 'meat feast']
 pastas = ['carbonara', 'bolognese', 'pesto', 'alfredo']
 burgers = ['cheeseburger', 'chicken burger', 'veggie burger', 'bacon burger']
 sushis = ['nigiri', 'sashimi', 'maki', 'temaki']
+grouped_tasks = [{'pizzas':pizzas},{'pastas':pastas},{'burgers':burgers},{'sushis':sushis}]
 
-#Within a task 
-pizza_order_dict = {idx: steps for idx, steps in enumerate(pizza_order)}
-pasta_order_dict = {idx: steps for idx, steps in enumerate(pasta_order)}
-burger_order_dict = {idx: steps for idx, steps in enumerate(burger_order)}
-sushi_order_dict = {idx: steps for idx, steps in enumerate(sushi_order)}
-
-# task priority
+# task course priority
+# main_course requires either drink or appetizer, then it is either dessert or cheese platter
 full_course = ['drink','appetizer', 'main_course', 'dessert','cheese platter']
 
 appetizer = ['soup', 'salad', 'bread', 'cheese']
 main_course = ['pasta', 'pizza', 'burger', 'sushi']
 dessert = ['cake', 'ice_cream', 'pudding', 'fruit']
 drink = ['water', 'juice', 'soda', 'wine']
+
+#Within a task 
+# use function by looping through like below and use modulo to create adjacency list depending on even/uneven logic
+# see example logic above
+pizza_order_dict = {idx: steps for idx, steps in enumerate(pizza_order)}
+pasta_order_dict = {idx: steps for idx, steps in enumerate(pasta_order)}
+burger_order_dict = {idx: steps for idx, steps in enumerate(burger_order)}
+sushi_order_dict = {idx: steps for idx, steps in enumerate(sushi_order)}
+
+
 
 
 task_course_priority_tasks = dict([
@@ -86,27 +109,29 @@ task_course_priority = dict([
     ('drink', [])
 ])
 task_priority_course = dict([
-    (1, [2,4]),
-    (2, [3]),
-    (3, [2]),
+    (1, [2]),
+    (2, [3, 4]),
+    (3, []),
     (4, [])
 ])
 
-
-
 wf_priority = ['regular','scheduled']
 
-# TODO Design logic to group workflows and tasks and set priority using celery configuration
-# TODO express outside type of dependencies pasta depends on pizza depnds on burger
+# Make 10 workflows and randomly choose the prio type and depending on the prio type randomly choose the dag_adjacency_list
+# In a loop get the workflows and check their prio_type and time_created
+#  with both combinations either put it in the prio queue or default queue but only if you know that target system
+# target system for now will be the sum of all tasks in the workflow must not exceed the threshold of available time target_systems (2) can handle
+#  target system is for now a list of time.sleep commands between 4-10 seconds and we have four target systems running at all time our webhook will be 
+#  to announce once one of the elements is finished to the loop. because if  one becomes available then we can call apply either for run task (prio) or run group task using celery beat
+# TODO Design logic to group workflows and tasks and set priority using celery configuration and to keep states of target systems in order to call celery tasks
 # TODO add deployment representation of task and workflow and keep revision 
+# TODO add logic of getting deployments where status has incomplete, extract their workflow_id's, group them by type and put to scheduler
 
 parent_regular = Workflow(prio_type='regular', dag_adjacency_list=make_dependency_1)
 session.add(parent_regular)
 for i in range(len(full_course)+1):
     parent_regular.children.append(Task(sleep=random.randint(1, 4),type=random.choice(full_course), dependencies={}))
 session.commit()
-
-
 
 parent_scheduled = Workflow(prio_type='scheduled', dag_adjacency_list=[])
 session.add(parent_scheduled)
@@ -115,6 +140,9 @@ for i in range(len(pasta_order)):
 session.commit()
 workflow_regular = session.query(Workflow).filter_by(prio_type='regular').first()
 workflow_scheduled = session.query(Workflow).filter_by(prio_type='scheduled').first()
+
+
+
 # for worklflow in [workflow_regular, workflow_scheduled]:
 #     if worklflow.prio_type != 'scheduled':
 #         print(worklflow.prio_type)
@@ -124,15 +152,14 @@ workflow_scheduled = session.query(Workflow).filter_by(prio_type='scheduled').fi
 #     args=(workflow_scheduled.to_dict(),QUEUE_NAME_2,),
 #     queue=QUEUE_NAME_2
 # )
-result_regular = run.apply_async(
-    args=(workflow_regular.to_dict(),),
-    queue=QUEUE_NAME
-)
+# result_regular = run.apply_async(
+#     args=(workflow_regular.to_dict(),),
+#     queue=QUEUE_NAME
+# )
 
-
-
-# # Collect results
-print(list(result_regular.collect()))
+# Collect results
+# Save result in DB
+# print(list(result_regular.collect()))
 # _, answer =list(result_group.collect())[0]
 # print(answer)
 

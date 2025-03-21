@@ -14,7 +14,7 @@ Base = declarative_base()
 class Workflow(Base):
     __tablename__ = 'workflow'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    dag_adjacency_list = Column(MutableJson, nullable=False, default={})
+    dag_adjacency_list = Column(MutableJson, nullable=False, default={}) # definition of dependencies of children
     prio_type = Column(String(50), nullable=False, default='regular') # or scheduled
     status = Column(String(50), nullable=False, default='pending') # or success, failure
     tasks_status = Column(MutableJson, nullable=False, default={})
@@ -79,7 +79,7 @@ class Task(Base):
     celery_task_retry_count = Column(Integer, nullable=True)
     sleep = Column(Integer, nullable=False)
     type = Column(String(50), nullable=False, default='pizza') # or pasta, burger, sushi
-    dependencies = Column(MutableJson, nullable=True)  # can be null if no dependencies
+    dependencies = Column(MutableJson, nullable=True)  # can be null if no dependencies or dependencies in tasks that makes up this task
 
 
     def to_dict(self):
@@ -104,3 +104,6 @@ class Task(Base):
             type=task_dict['type'],
             dependencies=task_dict['dependencies']
         )
+# TODO set Deployment to represent workflow, while a workflow can have multiple deployments
+#  add revisions, status of deployment depending on status of workflow
+# add method to get children status of workflow 
