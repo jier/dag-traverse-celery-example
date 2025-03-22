@@ -1,15 +1,57 @@
 import time
 from celery import Celery
-from .models import Task, Workflow
+from .models import Task, Workflow,Deployment
 from .conf import DATABASE_URI
 # from celery.signals import task_postrun, task_prerun, after_setup_logger, task_failure
 from celery.states import SUCCESS
 from celery import group
 import networkx as nx
 from celery.result import AsyncResult
+import uuid
 
 app = Celery('dag-celery', backend='db+' + DATABASE_URI, broker='amqp://guest:guest@localhost')
 
+def _update_deployment(workflow_dict, task_list_dict, request_id):
+    print('Updating deployment with corresponding Workflow id {}'.format(workflow_dict['id']))
+    workflow = Workflow.from_dict(workflow_dict)
+    task_list = [Task.from_dict(task_dict) for task_dict in task_list_dict]
+  
+    result = []
+    for task in task_list:
+        result.append({'type': task.type, 'celery_task_uuid': task.celery_task_uid,
+                                'celery_task_status':task.celery_task_status
+                            })
+    deployment = Deployment(workflow_id=workflow.id)
+    deployment.run_id =  request_id
+    deployment.revision = str(uuid.uuid4())
+    deployment.status = SUCCESS
+    deployment.deployment_type = workflow.prio_type
+    deployment.deployment_task_status = result
+    return deployment.to_dict()
+
+
+
+
+def _update_workflow_status(task_list_dict, workflow_dict):
+    # TODO add randomness to sometimes put workflow to failed states depending on task_children status, 
+    # all success wf success, at least one failed wf status failed
+
+    print('Updating Workflow id {}  with children status'.format(task_list_dict[0]['parent_id']))
+    
+    workflow = Workflow.from_dict(workflow_dict)
+    task_list = [Task.from_dict(task_dict) for task_dict in task_list_dict]
+  
+    result = []
+    for task in task_list:
+        result.append({'type': task.type, 'celery_task_uuid': task.celery_task_uid,
+                                'celery_task_status':task.celery_task_status
+                            })
+    workflow.tasks_status = result
+
+    workflow.status = SUCCESS
+    print('Workflow id {} updated with children status'.format(workflow.id))
+
+    return workflow.to_dict()
 
 def _process_task_node(task_dict, uid):
     # TODO add randomness to sometimes put task to failed states
@@ -37,22 +79,17 @@ def run(self, workflow_dict):
     print('Running Workflow {} '.format(workflow.id))
 
     flattened_workflow = flatten_workflow_dag(workflow)
-    task_list = []
+    task_list_dict = []
 
     for task_id in flattened_workflow:
         task_dict = _process_task_node(workflow.get_child(task_id).to_dict(), self.request.id)
-        task_list.append(Task.from_dict(task_dict))
+        task_list_dict.append(task_dict)
 
-    result = []
-    for task in task_list:
-        result.append({'type': task.type, 'celery_task_uuid': task.celery_task_uid,
-                                'celery_task_status':task.celery_task_status
-                            })
-    workflow.tasks_status = result
     self.update_state(state=SUCCESS, meta={'workflow_id': workflow.id})
-    workflow.status = SUCCESS
-
-    return workflow.to_dict()
+    updated_workflow_dict = _update_workflow_status(task_list_dict=task_list_dict, workflow_dict=workflow.to_dict())
+    updated_deployment_dict = _update_deployment(workflow_dict=updated_workflow_dict, task_list_dict=task_list_dict, request_id=self.request.id)
+    return {'workflow_dict':updated_workflow_dict, 
+            'deployment_dict':updated_deployment_dict}
 
 
 @app.task(bind=True)
@@ -74,31 +111,7 @@ def _process_task(self, task_dict):
 
     return task.to_dict()
 
-# TODO add data before sending to simulate task in a new deployment task table
-def _update_deployment_task(self, task_dict):
-    pass 
 
-
-
-def _update_workflow_status(task_list_dict, workflow_dict):
-    # TODO add randomness to sometimes put workflow to failed states depending on task_children status, 
-    # all success wf success, at least one failed wf status failed
-    print('Updating Workflow id {}  with children status'.format(task_list_dict[0]['parent_id']))
-    
-    workflow = Workflow.from_dict(workflow_dict)
-    task_list = [Task.from_dict(task_dict) for task_dict in task_list_dict]
-  
-    result = []
-    for task in task_list:
-        result.append({'type': task.type, 'celery_task_uuid': task.celery_task_uid,
-                                'celery_task_status':task.celery_task_status
-                            })
-    workflow.tasks_status = result
-
-    workflow.status = SUCCESS
-    print('Workflow id {} updated with children status'.format(workflow.id))
-
-    return workflow.to_dict()
     
 
 @app.task(bind=True)

@@ -1,8 +1,9 @@
 from celery.backends.database.models import Task as CeleryTask
 from typing import List
 import networkx as nx
+import uuid
 from networkx.algorithms.dag import is_directed_acyclic_graph
-from sqlalchemy import ForeignKey, MetaData
+from sqlalchemy import ForeignKey, Uuid
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import Mapped
@@ -19,6 +20,7 @@ class Workflow(Base):
     status = Column(String(50), nullable=False, default='pending') # or success, failure
     tasks_status = Column(MutableJson, nullable=False, default={})
     children: Mapped[List["Task"]] = relationship("Task", back_populates="parent")
+    deployments: Mapped[List["Deployment"]] = relationship("Deployment", back_populates="workflow")
 
     @property
     def execution_graph(self):
@@ -42,15 +44,21 @@ class Workflow(Base):
                 'prio_type': self.prio_type,
                 'status': self.status,
                 'tasks_status': self.tasks_status,
-                'children': [child.to_dict() for child in self.children]
+                'children': [child.to_dict() for child in self.children],
+                'deployments': [deployment.to_dict() for deployment in self.deployments]
             }
 
     def count_children(self):
         return len(self.children)
     
+    def count_deployments(self):
+        return len(self.deployments)
+    
     def get_child(self, child_id):
         return self.children[child_id]
 
+    def get_deployment(self, deployment_id):
+        return self.deployments[deployment_id]
     
     @classmethod
     def from_dict(cls, workflow_dict):
@@ -59,20 +67,24 @@ class Workflow(Base):
             # Create an instance of the Task class for each dictionary
             child = Task.from_dict(child_dict)
             children.append(child)
+        deployments = []
+        for deployment_dict in workflow_dict['deployments']:
+            deployments.append(Deployment.from_dict(deployment_dict))
         return cls(
             id=workflow_dict['id'],
             dag_adjacency_list= workflow_dict['dag_adjacency_list'],
             prio_type=workflow_dict['prio_type'],
             status=workflow_dict['status'],
             tasks_status=workflow_dict['tasks_status'],
-            children=children
+            children=children,
+            deployments=deployments
         )
     
     
 class Task(Base):
     __tablename__ = 'task'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    parent_id: Mapped[int] = mapped_column(ForeignKey("workflow.id"), nullable=True)
+    parent_id: Mapped[int] = mapped_column(ForeignKey("workflow.id"), nullable=False)
     parent :Mapped[Workflow] = relationship("Workflow", back_populates="children")
     celery_task_uid = Column(String(100))
     celery_task_status = Column(String(100),default='PENDING')  # or SUCCESS, FAILURE
@@ -107,3 +119,36 @@ class Task(Base):
 # TODO set Deployment to represent workflow, while a workflow can have multiple deployments
 #  add revisions, status of deployment depending on status of workflow
 # add method to get children status of workflow 
+class Deployment(Base):
+    __tablename__ = 'deployment'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflow.id", ondelete="CASCADE"),nullable=False)
+    workflow: Mapped[Workflow] = relationship("Workflow", back_populates="deployments")
+    revision = Column(Uuid(as_uuid=False), nullable=False, default=uuid.uuid4)
+    run_id = Column(Uuid(as_uuid=False), nullable=False)
+    status = Column(String(50),nullable=False, default='pending') # or success, failed
+    deployment_type= Column(String(50), nullable=False, default='regular') # or scheduled, housekeeping
+    deployment_task_status = Column(MutableJson, nullable=False, default={})
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'workflow_id': self.workflow_id,
+            'revision': self.revision,
+            'run_id': self.run_id,
+            'status': self.status,
+            'deployment_type': self.deployment_type,
+            'deployment_task_status': self.deployment_task_status
+        }
+    
+    @classmethod
+    def from_dict(cls, deployment_dict):
+        return cls(
+            id=deployment_dict['id'],
+            workflow_id=deployment_dict['workflow_id'],
+            revision=deployment_dict['revision'],
+            run_id=deployment_dict['run_id'],
+            status=deployment_dict['status'],
+            deployment_type=deployment_dict['deployment_type'],
+            deployment_task_status=deployment_dict['deployment_task_status']
+        )

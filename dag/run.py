@@ -1,4 +1,4 @@
-from .models import Workflow, Task, CeleryTask, Base
+from .models import Workflow, Task, Deployment, CeleryTask, Base
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
@@ -78,7 +78,7 @@ grouped_tasks = [{'pizzas':pizzas},{'pastas':pastas},{'burgers':burgers},{'sushi
 
 # task course priority
 # main_course requires either drink or appetizer, then it is either dessert or cheese platter
-full_course = ['drink','appetizer', 'main_course', 'dessert','cheese platter']
+full_course = ['drink','appetizer', 'main_course', 'dessert','cheese platter', 'coffee']
 
 appetizer = ['soup', 'salad', 'bread', 'cheese']
 main_course = ['pasta', 'pizza', 'burger', 'sushi']
@@ -129,15 +129,16 @@ wf_priority = ['regular','scheduled']
 
 parent_regular = Workflow(prio_type='regular', dag_adjacency_list=make_dependency_1)
 session.add(parent_regular)
-for i in range(len(full_course)+1):
+for i in range(len(full_course)):
     parent_regular.children.append(Task(sleep=random.randint(1, 4),type=random.choice(full_course), dependencies={}))
-session.commit()
+
 
 parent_scheduled = Workflow(prio_type='scheduled', dag_adjacency_list=[])
 session.add(parent_scheduled)
 for i in range(len(pasta_order)):
     parent_scheduled.children.append(Task(sleep=random.randint(1, 4),type=random.choice(pastas), dependencies={}))
-session.commit()
+
+
 workflow_regular = session.query(Workflow).filter_by(prio_type='regular').first()
 workflow_scheduled = session.query(Workflow).filter_by(prio_type='scheduled').first()
 
@@ -152,14 +153,23 @@ workflow_scheduled = session.query(Workflow).filter_by(prio_type='scheduled').fi
 #     args=(workflow_scheduled.to_dict(),QUEUE_NAME_2,),
 #     queue=QUEUE_NAME_2
 # )
-# result_regular = run.apply_async(
-#     args=(workflow_regular.to_dict(),),
-#     queue=QUEUE_NAME
-# )
+result_regular = run.apply_async(
+    args=(workflow_regular.to_dict(),),
+    queue=QUEUE_NAME
+)
 
 # Collect results
 # Save result in DB
-# print(list(result_regular.collect()))
+_, answer = list(result_regular.collect())[0]
+# print(answer)
+finished_workflow = Workflow.from_dict(answer['workflow_dict'])
+finished_deployment = Deployment.from_dict(answer['deployment_dict'])
+session.add(finished_deployment)
+print('--------------------\n')
+print(finished_workflow.to_dict())
+print('--------------------\n')
+print(finished_deployment.to_dict())
+session.commit()
 # _, answer =list(result_group.collect())[0]
 # print(answer)
 
