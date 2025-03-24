@@ -1,6 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
-from .conf import DATABASE_URI,QUEUE_NAME_R, QUEUE_NAME_S
+from .conf import DATABASE_URI,QUEUE_NAME_R, QUEUE_NAME_S,HEALTH_CELERY_TASK_CRON
 
 
 # Initialize Celery app
@@ -33,7 +33,15 @@ app.conf.update(
     # Enable task priority
     task_inherit_parent_priority=True,
     task_queue_max_priority=10,
-    task_default_priority=5
+    task_default_priority=5,
+
+    #Fine grain control on worker for instance of worker receiving SIGKILL or an exception occured
+    # to pass to another worker after it has been put back in the queue
+    #  Accepted answer: https://stackoverflow.com/questions/45045980/what-different-between-task-reject-on-worker-lost-and-task-acks-late-in-celery
+    task_ack_late=True,
+    task_reject_on_worker_lost=True,
+    worker_state_db="./celery-state.db" #"./celery-state.db" #only local files works for now
+    # result_backend="mysql+pymysql://admin:admin123@dag_celery_db:3306/dag_celery" #not working module not found error
 )
 app.conf.update(
     result_expires=3600,
@@ -44,10 +52,11 @@ app.conf.update(
     enable_utc=True,
 )
 
+# Health checks summary status of tasks
 app.conf.beat_schedule = {
     'run-inpesction-celery-tasks':{
         'task': 'scheduled_monitoring_task',
-        'schedule': crontab(minute='*/1'), # run every minute
+        'schedule': crontab(minute=HEALTH_CELERY_TASK_CRON), # run every minute
     }
 }
 # If this module is run directly

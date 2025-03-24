@@ -1,7 +1,6 @@
 from celery.backends.database.models import Task as CeleryTask
 from typing import List
 import networkx as nx
-import uuid
 from networkx.algorithms.dag import is_directed_acyclic_graph
 from sqlalchemy import ForeignKey, Uuid
 from sqlalchemy import Column, Integer, String
@@ -55,7 +54,10 @@ class Workflow(Base):
         return len(self.deployments)
     
     def get_child(self, child_id):
-        return self.children[child_id-1]
+        try:
+            return self.children[child_id-1]
+        except IndexError:
+            raise IndexError(f"Child with id {child_id} not found. Valid range is 1 to {len(self.children)}")
 
     def get_deployment(self, deployment_id):
         return self.deployments[deployment_id]
@@ -88,9 +90,9 @@ class Task(Base):
     parent :Mapped[Workflow] = relationship("Workflow", back_populates="children")
     celery_task_uid = Column(String(100))
     celery_task_status = Column(String(100),default='PENDING')  # or SUCCESS, FAILURE
-    celery_task_retry_count = Column(Integer, nullable=True)
+    # celery_task_retry_count = Column(Integer, nullable=True) # Only registered if you want to retry task
     sleep = Column(Integer, nullable=False)
-    type = Column(String(50), nullable=False, default='pizza') # or pasta, burger, sushi
+    type = Column(String(150), nullable=False, default='pizza') # or pasta, burger, sushi
     dependencies = Column(MutableJson, nullable=True)  # can be null if no dependencies or dependencies in tasks that makes up this task
 
 
@@ -100,7 +102,7 @@ class Task(Base):
             'parent_id': self.parent_id,
             'celery_task_uid': self.celery_task_uid,
             'celery_task_status': self.celery_task_status,
-            'celery_task_retry_count': self.celery_task_retry_count,
+            # 'celery_task_retry_count': self.celery_task_retry_count,
             'sleep': self.sleep,
             'type': self.type,
             'dependencies': self.dependencies
@@ -113,14 +115,11 @@ class Task(Base):
             parent_id=task_dict['parent_id'],
             celery_task_uid=task_dict['celery_task_uid'],
             celery_task_status=task_dict['celery_task_status'],
-            celery_task_retry_count=task_dict['celery_task_retry_count'],
+            # celery_task_retry_count=task_dict['celery_task_retry_count'],
             sleep=task_dict['sleep'],
             type=task_dict['type'],
             dependencies=task_dict['dependencies']
         )
-# TODO set Deployment to represent workflow, while a workflow can have multiple deployments
-#  add revisions, status of deployment depending on status of workflow
-# add method to get children status of workflow 
 class Deployment(Base):
     __tablename__ = 'deployment'
     id = Column(Integer, primary_key=True, autoincrement=True)

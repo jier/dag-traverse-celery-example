@@ -20,9 +20,7 @@
                 "--queues=regular,scheduled",
                 "--pool=threads", // or "--pool=processes" or "--pool=threads", 
                 "--concurrency=4",
-                // "--without-gossip",
-                // "--without-mingle"
-                
+                "--without-gossip",
             ],
             "justMyCode": false
         },

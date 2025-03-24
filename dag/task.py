@@ -2,7 +2,6 @@ import time
 from .models import Task, Workflow,Deployment
 from .conf import QUEUE_NAME_S, QUEUE_NAME_R
 from .celery import app
-# from celery.signals import task_postrun, task_prerun, after_setup_logger, task_failure
 from celery.states import SUCCESS
 from celery import group
 import networkx as nx
@@ -67,10 +66,10 @@ def _process_task_node(self, task_dict):
         '{} with method Sleep, sec: {}'.format(task.type, task.id, self.request.id, i))
         time.sleep(1)
     task.celery_task_status = SUCCESS
-    self.update_state(state=SUCCESS)
+    
     print('Task type {} and Id: '
     '{} completed with status {}'.format(task.type, task.id, task.celery_task_status))
-
+    self.update_state(state=SUCCESS, meta={'tasks_id': task.id})
     return task.to_dict()
 
 
@@ -105,25 +104,25 @@ def run_with_queue_order(self, workflow_dict, queue_):
                     if not graph.in_degree(neighbor) == 0:
                         print('No predecessor in neighbour, append to process neighbour: {}'.format(neighbor))
                         queue.append(neighbor)
-    print('Done?')
     task_list_dict = []
     while len(task_list_dict_async) > 0:
         for async_elem in task_list_dict_async[:]:
             if async_elem.successful() or async_elem.failed():
                 task_list_dict.append(AsyncResult(async_elem).result)
                 task_list_dict_async.remove(async_elem)
+        print("⏳Waiting for async results to be collected in regular call.")
         time.sleep(1)
 
-
-    self.update_state(state=SUCCESS, meta={'workflow_id': workflow.id})
     _workflow_dict = _update_workflow_status(task_list_dict=task_list_dict, workflow_dict=workflow.to_dict())
-    updated_workflow_dict, updated_deployment_dict = _update_deployment(workflow_dict=_workflow_dict, task_list_dict=task_list_dict, request_id=self.request.id)
-    return {'workflow_dict':updated_workflow_dict, 
-            'deployment_dict':updated_deployment_dict}
+    updated_workflow_dict, updated_deployment_dict = _update_deployment(workflow_dict=_workflow_dict, 
+                                                                        task_list_dict=task_list_dict, request_id=self.request.id)
+    self.update_state(state=SUCCESS, meta={'workflow_id': workflow.id})
+    return dict({'workflow_dict':updated_workflow_dict, 
+            'deployment_dict':updated_deployment_dict})
 
-@app.task(bind=True)
-def run(self, workflow_dict, exchange=QUEUE_NAME_R):
-
+@app.task(bind=True, exchange=QUEUE_NAME_R)
+def run_on_topological_sort_graph(self, workflow_dict):
+    # Below runs concurrent and does not guarantee the order of the adjacency list of the graph
     workflow = Workflow.from_dict(workflow_dict)
     print('Running Workflow {} '.format(workflow.id))
 
@@ -146,11 +145,13 @@ def run(self, workflow_dict, exchange=QUEUE_NAME_R):
         time.sleep(1)
 
 
-    self.update_state(state=SUCCESS, meta={'workflow_id': workflow.id})
+    
     _workflow_dict = _update_workflow_status(task_list_dict=task_list_dict, workflow_dict=workflow.to_dict())
-    updated_workflow_dict, updated_deployment_dict = _update_deployment(workflow_dict=_workflow_dict, task_list_dict=task_list_dict, request_id=self.request.id)
-    return {'workflow_dict':updated_workflow_dict, 
-            'deployment_dict':updated_deployment_dict}
+    updated_workflow_dict, updated_deployment_dict = _update_deployment(workflow_dict=_workflow_dict, 
+                                                                        task_list_dict=task_list_dict, request_id=self.request.id)
+    self.update_state(state=SUCCESS, meta={'workflow_id': workflow.id})
+    return dict({'workflow_dict':updated_workflow_dict, 
+            'deployment_dict':updated_deployment_dict})
 
 
 @app.task(bind=True)
@@ -165,7 +166,7 @@ def _process_task(self, task_dict):
         print('Type task:{} Id: {}: Sleep, sec: {}'.format(task.type,  task.celery_task_uid, i))
         time.sleep(1)
 
-    self.update_state(state=SUCCESS)
+    self.update_state(state=SUCCESS, meta={'tasks_id': task.id})
     task.celery_task_status = SUCCESS
 
     print('Task type {} completed with status {}'.format(task.type, task.celery_task_status))
@@ -195,12 +196,15 @@ def run_group(self, workflow_dict, queue):
         if result_group.successful() or result_group.failed():
             intermediate_tasks_result.append([AsyncResult(result_group.children[idx]).result  for idx, _ in enumerate(result_group)])
             break
+        print("⏳Waiting for async results to be collected in scheduled call.")
         time.sleep(1)
     # intermediate_tasks_result[0] because we want only the results out of the Asyncrecult tuples
     _workflow_dict = _update_workflow_status(task_list_dict=intermediate_tasks_result[0],workflow_dict=workflow_dict)
     updated_workflow_dict, updated_deployment_dict = _update_deployment(workflow_dict=_workflow_dict, task_list_dict=intermediate_tasks_result[0], request_id=self.request.id)
-    return {'workflow_dict':updated_workflow_dict, 
-            'deployment_dict':updated_deployment_dict}
+    self.update_state(state=SUCCESS, meta={'workflow_id': workflow.id})
+
+    return dict({'workflow_dict':updated_workflow_dict, 
+            'deployment_dict':updated_deployment_dict})
 
 
 @app.task(name="monitor", bind=True, exchange=QUEUE_NAME_R)
