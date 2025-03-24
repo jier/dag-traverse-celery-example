@@ -55,7 +55,7 @@ class Workflow(Base):
         return len(self.deployments)
     
     def get_child(self, child_id):
-        return self.children[child_id]
+        return self.children[child_id-1]
 
     def get_deployment(self, deployment_id):
         return self.deployments[deployment_id]
@@ -96,6 +96,7 @@ class Task(Base):
 
     def to_dict(self):
         return {
+            'id':self.id,
             'parent_id': self.parent_id,
             'celery_task_uid': self.celery_task_uid,
             'celery_task_status': self.celery_task_status,
@@ -108,6 +109,7 @@ class Task(Base):
     @classmethod
     def from_dict(cls, task_dict):
         return cls(
+            id=task_dict['id'],
             parent_id=task_dict['parent_id'],
             celery_task_uid=task_dict['celery_task_uid'],
             celery_task_status=task_dict['celery_task_status'],
@@ -124,8 +126,8 @@ class Deployment(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     workflow_id: Mapped[int] = mapped_column(ForeignKey("workflow.id", ondelete="CASCADE"),nullable=False)
     workflow: Mapped[Workflow] = relationship("Workflow", back_populates="deployments")
-    revision = Column(Uuid(as_uuid=False), nullable=False, default=uuid.uuid4)
-    run_id = Column(Uuid(as_uuid=False), nullable=False)
+    revision = Column(Uuid(as_uuid=False), nullable=False, default='')
+    run_id = Column(Uuid(as_uuid=False), nullable=False, default='')
     status = Column(String(50),nullable=False, default='pending') # or success, failed
     deployment_type= Column(String(50), nullable=False, default='regular') # or scheduled, housekeeping
     deployment_task_status = Column(MutableJson, nullable=False, default={})

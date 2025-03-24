@@ -144,7 +144,7 @@ import matplotlib.pyplot as plt
 # plt.show()
 
 # Define the adjacency lists
-make_dependency_1 = {
+make_dependency_0 = {
     1: [3],
     2: [4],
     3: [5],
@@ -153,12 +153,15 @@ make_dependency_1 = {
     6: [8],
     7: [8]
 }
-# make_dependency_1 = {
-#     1: [3],
-#     2: [3],
-#     3: [4],
-#     4: []
-# }
+make_dependency_1 =dict([
+    (1, [3]),
+    (2, [3]),
+    (3, [4, 5]),
+    (4, []),
+    (5, [6]),
+    (6, [])
+])
+
 make_dependency_2 = {
     1: [3],
     2: [3],
@@ -191,7 +194,12 @@ for node in d.keys():
 if nx.is_directed_acyclic_graph(G3):
     print('G3 is a DAG')
 else: 
-    print('G3 is not a DAG')      
+    print('G3 is not a DAG')    
+print(list(nx.topological_sort(G3)))
+print(list(nx.topological_sort(nx.line_graph(G3))))
+for node, nbchild in G3.adjacency():
+    for neighbour, entry in nbchild.items():
+        print(neighbour, entry)  
 # # Plot the graphs singularly
 # pos = nx.spring_layout(G1)
 # nx.draw(G1, pos, with_labels=True, node_color='lightblue', node_size=1500, edge_color='gray', linewidths=1, font_size=12)
@@ -238,5 +246,5 @@ else:
 #         result.append(list(G1.successors(node)))
 
 # print(f"Result entrypoint: {result}")
-data = [{'parent_id': 2, 'celery_task_uid': '6e278c68-46fb-4465-b1d8-846b48ee593e', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'pesto', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': '0ff8b31e-8f5c-41c3-a125-d3d4d0485b65', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'carbonara', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': '25e589b3-ce71-4c41-bcfd-1207af900ebd', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 3, 'type': 'pesto', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': 'c5d62fc2-1d95-4076-92bb-dbb407cedb19', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'pesto', 'dependencies': {}}]
-print(data[0]['parent_id'])
+# data = [{'parent_id': 2, 'celery_task_uid': '6e278c68-46fb-4465-b1d8-846b48ee593e', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'pesto', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': '0ff8b31e-8f5c-41c3-a125-d3d4d0485b65', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'carbonara', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': '25e589b3-ce71-4c41-bcfd-1207af900ebd', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 3, 'type': 'pesto', 'dependencies': {}}, {'parent_id': 2, 'celery_task_uid': 'c5d62fc2-1d95-4076-92bb-dbb407cedb19', 'celery_task_status': 'SUCCESS', 'celery_task_retry_count': None, 'sleep': 2, 'type': 'pesto', 'dependencies': {}}]
+# print(data[0]['parent_id'])

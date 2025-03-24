@@ -17,34 +17,14 @@
                 "worker",
                 "-E",
                 "--loglevel=info",
-                "--queues=queue-1,queue-2",
+                "--queues=regular,scheduled",
                 "--pool=threads", // or "--pool=processes" or "--pool=threads", 
                 "--concurrency=4",
-                "--without-gossip",
-                "--without-mingle"
+                // "--without-gossip",
+                // "--without-mingle"
                 
             ],
             "justMyCode": false
         },
-        // {
-        //     "name": "Python Debugger: Celery",
-        //     "type": "debugpy",
-        //     "request": "launch",
-        //     "module": "celery",
-        //     "console": "integratedTerminal",
-        //     "args": [
-        //         "-A",
-        //         "dag.task",
-        //         "worker",
-        //         "-E",
-        //         "--loglevel=info",
-        //         "--queues=queue-2", //,queue-2",
-        //         "--pool=threads", // or "--pool=processes" or "--pool=solo", 
-        //         "--concurrency=2",
-        //         "--without-gossip"
-                
-        //     ],
-        //     "justMyCode": false
-        // }
     ]
 }
