@@ -4,7 +4,7 @@ from .conf import DATABASE_URI,QUEUE_NAME_R, QUEUE_NAME_S,HEALTH_CELERY_TASK_CRO
 
 
 # Initialize Celery app
-app = Celery('dag-celery',
+app = Celery('dag_celery',
              broker='amqp://guest:guest@localhost',
              backend='db+' + DATABASE_URI,
              include=['dag.task'])
