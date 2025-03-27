@@ -320,7 +320,10 @@ def rerun_failed_not_completed_workflow(to_run_later_queue:deque):
     
     print("💥Finished Rerunning incomplete or failed workflows.")
 
-        
+
+def main():
+    #TODO make a while loop run on timer to make the simulation run 
+    pass   
 
 if __name__ == "__main__":
     
@@ -342,6 +345,7 @@ if __name__ == "__main__":
                       help='Number of available nodes on target system (default: 4)')
     
     args = parser.parse_args()
+    #TODO make below function as an utitlity to be called in the main function.
     fill_database(request_size=args.db_size, variations_dependency_list=variations_dependency_list,full_course=full_course,grouped_tasks=grouped_tasks)
     if args.mode == 'single':
         failed_queue = single_simulation(session, Workflow, args.prio_type)
