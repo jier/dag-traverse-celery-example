@@ -321,46 +321,85 @@ def rerun_failed_not_completed_workflow(to_run_later_queue:deque):
     print("💥Finished Rerunning incomplete or failed workflows.")
 
 
-def main():
-    #TODO make a while loop run on timer to make the simulation run 
-    pass   
+def main(request_size:int, variations_dependency_list:list,
+         full_course:list, grouped_tasks:list,
+         mode:str, prio_type:str, session:sessionmaker, Workflow:Workflow, batch_size:int,
+         db_size:int, nodes:int):
+    """
+    Main execution function for DAG workflow simulation.
+
+    Args:
+        request_size: Number of workflows to create in database
+        variations_dependency_list: List of DAG dependency variations
+        full_course: List of course types for regular workflows
+        grouped_tasks: List of task groups for scheduled workflows
+        mode: Execution mode ('single', 'mass', 'rerun-single', 'all')
+        prio_type: Priority type ('regular' or 'scheduled')
+        session: SQLAlchemy session object
+        Workflow: Workflow model class
+        batch_size: Number of workflows to process per batch
+        db_size: Database size for simulation
+        nodes: Number of available nodes on target system
+    """
+    # Populate database with workflows
+    fill_database(
+        request_size=db_size,
+        variations_dependency_list=variations_dependency_list,
+        full_course=full_course,
+        grouped_tasks=grouped_tasks
+    )
+
+    # Execute based on mode
+    if mode == 'single':
+        failed_queue = single_simulation(session, Workflow, prio_type)
+        print(f"Number of failed/incomplete workflows: {len(failed_queue)}")
+    elif mode == 'mass':
+        failed_queue = mass_simulation(session, Workflow, batch_size, nodes)
+        print(f"Number of failed/incomplete workflows: {len(failed_queue)}")
+    elif mode == 'rerun-single':
+        # Get failed workflows from previous run
+        failed_queue = single_simulation(session, Workflow, prio_type)
+        if failed_queue:
+            rerun_failed_not_completed_workflow(failed_queue)
+    elif mode == 'all':
+        failed_queue = mass_simulation(session, Workflow, batch_size, nodes)
+        if failed_queue:
+            rerun_failed_not_completed_workflow(failed_queue)   
 
 if __name__ == "__main__":
-    
+    # Parse command line arguments
     parser = argparse.ArgumentParser(description='DAG Task Runner')
-    parser.add_argument('--mode', type=str, required=True, 
+    parser.add_argument('--mode', type=str, required=True,
                       choices=['single', 'mass', 'rerun-single', 'all'],
                       help='Mode of operation: single, mass, rerun-single, or all')
-    parser.add_argument('--prio_type', type=str, required=True,default='regular',
-                        choices=['regular','scheduled'],
+    parser.add_argument('--prio_type', type=str, required=True, default='regular',
+                        choices=['regular', 'scheduled'],
                       help='Priority type for simulation requests, '
                       'where regular stands for users request with high priority and '
-                      'cheduled request are per type scheduled requests (default: regular), '
+                      'scheduled request are per type scheduled requests (default: regular), '
                       'options: regular or scheduled')
     parser.add_argument('--batch-size', type=int, default=4,
                       help='Batch size for mass simulation (default: 4)')
     parser.add_argument('--db_size', type=int, default=4,
                       help='Database size for simulation (default: 4)')
-    parser.add_argument('--nodes', type=int, default=4, 
+    parser.add_argument('--nodes', type=int, default=4,
                       help='Number of available nodes on target system (default: 4)')
-    
+
     args = parser.parse_args()
-    #TODO make below function as an utitlity to be called in the main function.
-    fill_database(request_size=args.db_size, variations_dependency_list=variations_dependency_list,full_course=full_course,grouped_tasks=grouped_tasks)
-    if args.mode == 'single':
-        failed_queue = single_simulation(session, Workflow, args.prio_type)
-        print(f"Number of failed/incomplete workflows: {len(failed_queue)}")
-    elif args.mode == 'mass':
-        failed_queue = mass_simulation(session, Workflow, args.batch_size, args.nodes)
-        print(f"Number of failed/incomplete workflows: {len(failed_queue)}")
-    elif args.mode == 'rerun-single':
-        # Get failed workflows from previous run
-        failed_queue = single_simulation(session, Workflow, args.prio_type)
-        if failed_queue:
-            rerun_failed_not_completed_workflow(failed_queue)
-    elif args.mode == 'all':
-        failed_queue = mass_simulation(session, Workflow, args.batch_size, args.nodes)
-        if failed_queue:
-            rerun_failed_not_completed_workflow(failed_queue)
+
+    # Execute main function with parsed arguments
+    main(
+        request_size=args.db_size,
+        variations_dependency_list=variations_dependency_list,
+        full_course=full_course,
+        grouped_tasks=grouped_tasks,
+        mode=args.mode,
+        prio_type=args.prio_type,
+        session=session,
+        Workflow=Workflow,
+        batch_size=args.batch_size,
+        db_size=args.db_size,
+        nodes=args.nodes
+    )
 
 
